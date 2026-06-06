@@ -1,0 +1,57 @@
+// sw.js - Service Worker（オフラインキャッシュ用）
+
+const CACHE_NAME = "studyum-v1";
+const URLS_TO_CACHE = [
+  "/",
+  "/index.html",
+  "/StudyDuel.jsx",
+  "/manifest.json",
+  "/icon-192.png",
+  "/icon-512.png",
+];
+
+// インストール時にファイルをキャッシュ
+self.addEventListener("install", (event) => {
+  event.waitUntil(
+    caches.open(CACHE_NAME).then((cache) => {
+      return cache.addAll(URLS_TO_CACHE).catch(() => {});
+    })
+  );
+  self.skipWaiting();
+});
+
+// 古いキャッシュを削除
+self.addEventListener("activate", (event) => {
+  event.waitUntil(
+    caches.keys().then((names) => {
+      return Promise.all(
+        names.filter((n) => n !== CACHE_NAME).map((n) => caches.delete(n))
+      );
+    })
+  );
+  self.clients.claim();
+});
+
+// リクエスト時: キャッシュ優先、無ければネットワーク
+self.addEventListener("fetch", (event) => {
+  if (event.request.method !== "GET") return;
+  event.respondWith(
+    caches.match(event.request).then((response) => {
+      return response || fetch(event.request).then((fetchResponse) => {
+        // ネットワークから取れたら次回のためキャッシュ
+        if (fetchResponse && fetchResponse.status === 200) {
+          const responseClone = fetchResponse.clone();
+          caches.open(CACHE_NAME).then((cache) => {
+            cache.put(event.request, responseClone);
+          });
+        }
+        return fetchResponse;
+      }).catch(() => {
+        // オフライン時のフォールバック
+        if (event.request.mode === "navigate") {
+          return caches.match("/");
+        }
+      });
+    })
+  );
+});
